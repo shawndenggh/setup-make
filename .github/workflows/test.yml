@@ -1,0 +1,63 @@
+name: Test
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  action:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate shell syntax
+        run: bash -n scripts/setup-make.sh
+      - name: Reuse existing Make
+        uses: ./
+      - name: Remove Make to exercise installation
+        run: sudo apt-get remove -y make
+      - name: Install through composite action
+        uses: ./
+      - name: Verify subsequent step
+        run: printf 'all:\n\t@echo setup-make-ok\n' | make -f -
+      - name: Reject unsupported runner OS
+        run: |
+          if RUNNER_OS=Windows bash scripts/setup-make.sh; then
+            echo 'Expected unsupported runner OS to fail'
+            exit 1
+          fi
+  containers:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: ubuntu:24.04
+            user: root
+          - image: debian:bookworm-slim
+            user: root
+          - image: ubuntu:24.04
+            user: runner
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test installation in minimal container
+        env:
+          TEST_IMAGE: ${{ matrix.image }}
+          TEST_USER: ${{ matrix.user }}
+        run: |
+          docker run --rm -v "$PWD:/action:ro" -e TEST_USER "$TEST_IMAGE" bash -euc '
+            ! command -v make
+            if [[ "$TEST_USER" == runner ]]; then
+              apt-get update
+              apt-get install -y --no-install-recommends sudo
+              useradd -m runner
+              echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner
+              chmod 440 /etc/sudoers.d/runner
+              sudo -u runner bash /action/scripts/setup-make.sh
+              sudo -u runner bash /action/scripts/setup-make.sh
+            else
+              bash /action/scripts/setup-make.sh
+              bash /action/scripts/setup-make.sh
+            fi
+            printf "all:\n\t@echo setup-make-ok\n" | make -f -
+          '

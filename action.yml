@@ -1,0 +1,13 @@
+name: Setup Make
+description: Ensure Make is available on Ubuntu and Debian runners, including minimal ARC containers.
+branding:
+  icon: tool
+  color: blue
+runs:
+  using: composite
+  steps:
+    - name: Set up Make
+      shell: bash
+      env:
+        SETUP_MAKE_ACTION_PATH: ${{ github.action_path }}
+      run: bash "$SETUP_MAKE_ACTION_PATH/scripts/setup-make.sh"
