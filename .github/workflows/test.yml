@@ -62,7 +62,10 @@ jobs:
           docker run --rm -v "$PWD:/action:ro" \
             -v /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro \
             -e TEST_USER -e SETUP_MAKE_MIRROR "$TEST_IMAGE" bash -euc '
-            ! command -v make
+            if command -v make; then
+              echo "Expected a minimal container without Make"
+              exit 1
+            fi
             if SETUP_MAKE_MIRROR="invalid mirror" bash /action/scripts/setup-make.sh; then
               echo "Expected invalid mirror to fail"
               exit 1
@@ -89,8 +92,9 @@ jobs:
               SETUP_MAKE_MIRROR=http://127.0.0.1:9/ubuntu bash /action/scripts/setup-make.sh
             fi
             [[ "$sources_before" == "$(find /etc/apt -type f -exec sha256sum {} + | sort)" ]]
-            ! command -v gcc
-            ! command -v g++
-            ! test -f /usr/include/stdio.h
+            if command -v gcc || command -v g++ || [[ -f /usr/include/stdio.h ]]; then
+              echo "Make installation must not install compilers or C headers"
+              exit 1
+            fi
             printf "all:\n\t@echo setup-make-ok\n" | make -f -
           '
