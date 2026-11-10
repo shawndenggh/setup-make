@@ -1,7 +1,12 @@
 name: Setup Make
 description: Ensure Make is available on Ubuntu and Debian runners, including minimal ARC containers.
+inputs:
+  mirror:
+    description: Optional Ubuntu archive URL; empty uses the runner's configured APT repositories.
+    required: false
+    default: ''
 branding:
-  icon: tool
+  icon: settings
   color: blue
 runs:
   using: composite
@@ -10,4 +15,5 @@ runs:
       shell: bash
       env:
         SETUP_MAKE_ACTION_PATH: ${{ github.action_path }}
+        SETUP_MAKE_MIRROR: ${{ inputs.mirror }}
       run: bash "$SETUP_MAKE_ACTION_PATH/scripts/setup-make.sh"

@@ -23,7 +23,26 @@ Place the action before the first `make` command in **each job** that needs it. 
 - Fails immediately when installation or the final executable check fails.
 - Runs in the job environment, so subsequent steps can use `make`.
 
-No inputs, package cache, downloaded installer scripts, or runtime dependencies beyond Bash and standard system utilities. Installation requires access to the runner's configured APT repositories. New ephemeral runners install again unless Make is already in their image.
+No package cache, downloaded installer scripts, or runtime dependencies beyond Bash and standard system utilities. New ephemeral runners install again unless Make is already in their image.
+
+## Mirror configuration
+
+| Input | Default | Description |
+| --- | --- | --- |
+| `mirror` | empty | Full Ubuntu APT archive URL. Empty uses the runner's configured repositories, including on Debian. |
+
+For Ubuntu ARC runners in mainland China:
+
+```yaml
+- uses: shawndenggh/setup-make@v1
+  timeout-minutes: 5
+  with:
+    mirror: https://mirrors.aliyun.com/ubuntu
+```
+
+Use `https://mirrors.aliyun.com/ubuntu-ports` on ARM64, or provide an internal Ubuntu mirror. The archive must contain the runner's codename, updates and security suites. HTTPS requires CA certificates in the runner image. Non-ECS hosts should use the public Aliyun domain shown above.
+
+When installing with `mirror`, the action uses a temporary Deb822 source file, excludes other repositories/PPAs, and retains Ubuntu archive signature verification. It does not rewrite `/etc/apt`. Custom mirror installation is Ubuntu-only; Debian continues to use its configured sources. APT has 30-second network timeouts, two retries, and fails on index download errors. Set the step's `timeout-minutes` to bound total installation time. Mirror speed depends on the runner's network.
 
 ## Support
 
@@ -40,12 +59,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: shawndenggh/setup-make@v1
+        timeout-minutes: 5
+        with:
+          mirror: https://mirrors.aliyun.com/ubuntu
       - run: make build
 ```
 
 ## Development
 
-`bash -n scripts/setup-make.sh` checks shell syntax. The Test workflow exercises the composite action, fresh installation in minimal containers, root and sudo installation, repeated execution, and a subsequent Makefile target.
+`bash -n scripts/setup-make.sh` checks shell syntax. The Test workflow exercises the composite action, fresh installation in minimal containers, root and sudo installation, Aliyun mirrors, invalid/unreachable mirrors, source-file preservation, repeated execution, compiler absence, and a subsequent Makefile target.
 
 ## License
 

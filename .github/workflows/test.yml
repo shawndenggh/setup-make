@@ -8,10 +8,13 @@ permissions:
 jobs:
   action:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Validate shell syntax
-        run: bash -n scripts/setup-make.sh
+        run: |
+          bash -n scripts/setup-make.sh
+          shellcheck scripts/setup-make.sh
       - name: Reuse existing Make
         uses: ./
       - name: Remove Make to exercise installation
@@ -28,36 +31,66 @@ jobs:
           fi
   containers:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
         include:
           - image: ubuntu:24.04
             user: root
+            mirror: ''
           - image: debian:bookworm-slim
             user: root
+            mirror: ''
           - image: ubuntu:24.04
             user: runner
+            mirror: ''
+          - image: ubuntu:24.04
+            user: root
+            mirror: https://mirrors.aliyun.com/ubuntu
+          - image: ubuntu:24.04
+            user: runner
+            mirror: https://mirrors.aliyun.com/ubuntu
     steps:
       - uses: actions/checkout@v4
       - name: Test installation in minimal container
         env:
           TEST_IMAGE: ${{ matrix.image }}
           TEST_USER: ${{ matrix.user }}
+          SETUP_MAKE_MIRROR: ${{ matrix.mirror }}
         run: |
-          docker run --rm -v "$PWD:/action:ro" -e TEST_USER "$TEST_IMAGE" bash -euc '
+          docker run --rm -v "$PWD:/action:ro" \
+            -v /etc/ssl/certs/ca-certificates.crt:/etc/ssl/certs/ca-certificates.crt:ro \
+            -e TEST_USER -e SETUP_MAKE_MIRROR "$TEST_IMAGE" bash -euc '
             ! command -v make
+            if SETUP_MAKE_MIRROR="invalid mirror" bash /action/scripts/setup-make.sh; then
+              echo "Expected invalid mirror to fail"
+              exit 1
+            fi
             if [[ "$TEST_USER" == runner ]]; then
               apt-get update
               apt-get install -y --no-install-recommends sudo
               useradd -m runner
               echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner
               chmod 440 /etc/sudoers.d/runner
-              sudo -u runner bash /action/scripts/setup-make.sh
-              sudo -u runner bash /action/scripts/setup-make.sh
+            fi
+            if [[ -n "$SETUP_MAKE_MIRROR" ]]; then
+              status=0
+              SETUP_MAKE_MIRROR=http://127.0.0.1:9/ubuntu bash /action/scripts/setup-make.sh || status=$?
+              [[ "$status" -eq 100 ]]
+              echo "deb http://127.0.0.1:9/ppa noble main" > /etc/apt/sources.list.d/unreachable.list
+            fi
+            sources_before="$(find /etc/apt -type f -exec sha256sum {} + | sort)"
+            if [[ "$TEST_USER" == runner ]]; then
+              sudo -u runner env SETUP_MAKE_MIRROR="$SETUP_MAKE_MIRROR" bash /action/scripts/setup-make.sh
+              sudo -u runner env SETUP_MAKE_MIRROR=http://127.0.0.1:9/ubuntu bash /action/scripts/setup-make.sh
             else
               bash /action/scripts/setup-make.sh
-              bash /action/scripts/setup-make.sh
+              SETUP_MAKE_MIRROR=http://127.0.0.1:9/ubuntu bash /action/scripts/setup-make.sh
             fi
+            [[ "$sources_before" == "$(find /etc/apt -type f -exec sha256sum {} + | sort)" ]]
+            ! command -v gcc
+            ! command -v g++
+            ! test -f /usr/include/stdio.h
             printf "all:\n\t@echo setup-make-ok\n" | make -f -
           '
